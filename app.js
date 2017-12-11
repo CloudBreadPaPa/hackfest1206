@@ -4,6 +4,8 @@ A simple echo bot for the Microsoft Bot Framework.
 
 var restify = require('restify');
 var builder = require('botbuilder');
+var azure = require('azure-storage');
+var connectionString = 'DefaultEndpointsProtocol=https;AccountName=memefunctionstorage;AccountKey=/rOwErr/F+yO3TupawAPHZP8ZMvWSr5DVL9WucLnGGSHkcFvk2dsctTgA1A79HmFw/2ZRrv7AhxAe4ljYdmKAw==;EndpointSuffix=core.windows.net';
 
 // Setup Restify Server
 var server = restify.createServer();
@@ -30,6 +32,32 @@ server.post('/api/messages', connector.listen());
 
 // Create your bot with a function to receive messages from the user
 var bot = new builder.UniversalBot(connector, function (session) {
-    session.send("You said: %s", session.message.text);
-    //hello
+    // session.send("You said: %s", session.message.text);
+    // //hello 
+    var queuedMessage = { address: session.message.address, text: session.message.text };
+    session.sendTyping();
+    var queueSvc = azure.createQueueService(connectionString);
+    queueSvc.createQueueIfNotExists('result', function(err, result, response){
+        if(!err){
+            var queueMessageBuffer = new Buffer(JSON.stringify(queuedMessage)).toString('base64');
+            queueSvc.createMessage('result', queueMessageBuffer, function(err, result, response){
+                if(!err){
+                    session.send('Your message (\'' + session.message.text + '\') has been added to a queue, and it will be sent back to you via a Function');
+                } else {
+                    session.send('There was an error inserting your message into queue');
+                }
+            });
+        } else {
+            session.send('There was an error creating your queue');
+        }
+    });
+});
+
+bot.on('trigger', function (message) {
+    // handle message from trigger function
+    var queuedMessage = message.value;
+    var reply = new builder.Message()
+        .address(queuedMessage.address)
+        .text('This is coming from the trigger: ' + queuedMessage.text);
+    bot.send(reply);
 });
